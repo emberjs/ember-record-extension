@@ -1,25 +1,77 @@
 (function (setupHooks, downloadFile) {
   "use strict";
+  var calls = {};
+  self.___calls = calls;
   setupHooks(function (installHook) {
-    var addCalls = [];
-    function EmberLoad() {
-      var RouteRecognizer = Ember.__loader.require("route-recognizer").default;
-      var originalAdd = RouteRecognizer.prototype.add;
-      RouteRecognizer.prototype.add = function (routes, options) {
-        addCalls.push(JSON.parse(JSON.stringify([routes, options])));
-        return originalAdd.call(this, routes, options);
-      };
-    }
     function applicationLoad(application) {
       var router = application.__deprecatedInstance__.lookup('router:main');
       router.one('didTransition', function () {
-        var blob = new Blob([JSON.stringify(addCalls, null, 2)], {type : 'application/json'});
-        downloadFile(blob, 'route-recognizer_add_calls.json');
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+              setTimeout(function () {
+                var blob = new Blob([JSON.stringify(calls, null, 2)], {type : 'application/json'});
+                downloadFile(blob, 'recorded-calls.json');
+              }, 1000);
+            });
+          });
+        });
       });
     }
-    installHook("Ember", EmberLoad);
+    installHook("Ember", buildWrapper);
     installHook("application", applicationLoad);
   });
+
+  function buildWrapper() {
+    var RouteRecognizer = Ember.__loader.require("route-recognizer").default;
+    var original = RouteRecognizer.prototype;
+    var proto = Object.create(original);
+    RouteRecognizer.prototype = proto;
+
+    wrap("add", function (args) {
+      calls.add.push(clone(args));
+    });
+
+    wrap("handlersFor", function (args) {
+      calls.handlersFor.push(args);
+    });
+
+    wrap("hasRoute", function (args) {
+      calls.hasRoute.push(args);
+    });
+
+    wrap("generate", function (args) {
+      calls.generate.push(clone(args));
+    });
+
+    wrap("generateQueryString", function (args) {
+      calls.generateQueryString.push(clone(args));
+    });
+
+    wrap("parseQueryString", function (args) {
+      calls.parseQueryString.push(args);
+    });
+
+    wrap("recognize", function (args) {
+      calls.recognize.push(args);
+    });
+
+    function wrap(methodName, callback) {
+      calls[methodName] = [];
+      proto[methodName] = function () {
+        var args = new Array(arguments.length);
+        for (var i = 0; i < arguments.length; i++) {
+          args[i] = arguments[i];
+        }
+        callback(args);
+        return original[methodName].apply(this, arguments);
+      }
+    }
+
+    function clone(value) {
+      return JSON.parse(JSON.stringify(value));
+    }
+  }
 })((function(callback) {
   var ENV;
   var hooks;
