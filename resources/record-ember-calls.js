@@ -56,6 +56,67 @@
       calls.recognize.push(args);
     });
 
+    calls["map"] = [];
+
+    function wrapTo(node, original) {
+      var obj = Object.create(original);
+      obj.to = function (name, callback) {
+        node.to = name;
+        if (callback) {
+          node.block = [];
+          original.to.call(this, name, wrapCallback(node, callback));
+        } else {
+          original.to.call(this, name);
+        }
+      };
+      return obj;
+    }
+
+    function wrapMatch(parent, match) {
+      return function (path, callback) {
+        var node = {
+          match: path
+        };
+        parent.block.push(node);
+        if (callback) {
+          node.block = [];
+          match.call(this, path, wrapCallback(node, callback));
+        } else {
+          return wrapTo(node, match.call(this, path));
+        }
+      }
+    }
+
+    function wrapCallback(parent, callback) {
+      return function (match) {
+        callback(wrapMatch(parent, match));
+      }
+    }
+
+    proto.map = function (callback, addCallback) {
+      var node = {
+        block: []
+      };
+      calls.map.push(node);
+      original.map.call(this, wrapCallback(node, callback), addCallback);
+    };
+
+    /*
+"map" => {
+  block: [
+    {
+      match: "/path",
+      to: "name"
+      block?: [...]
+    },
+    {
+      path: "/foo",
+      block?: [...]
+    }, ...
+  ]
+};
+    */
+
     function wrap(methodName, callback) {
       calls[methodName] = [];
       proto[methodName] = function () {
