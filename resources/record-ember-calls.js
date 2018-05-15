@@ -1,4 +1,4 @@
-(function (setupHooks, downloadFile) {
+(function (setupHooks, downloadFile, loaderHook) {
   "use strict";
   var calls = {};
   self.___calls = calls;
@@ -21,6 +21,66 @@
     installHook("Ember", buildWrapper);
     installHook("application", applicationLoad);
   });
+
+  loaderHook(function (loader) {
+    var registry = loader.registry;
+    console.log('loader defined');
+    var cacheModule;
+    Object.defineProperty(registry, 'ember-metal/cache', {
+      get() {
+        return cacheModule;
+      }, set(v) {
+        let orig = v.callback;
+        v.callback = function (exports) {
+          orig.apply(this, arguments);
+          hookCache(exports);
+        };
+        cacheModule = v;
+      }
+    });
+
+    function hookCache(mod) {
+      let storeMap = new WeakMap();
+      console.dir(mod);
+      Object.defineProperty(mod.default.prototype, 'store', {
+        get() {
+          return storeMap.get(this);
+        }, set(store) {
+          storeMap.set(this, wrapStore(store));
+        }
+      });
+
+      let stores = calls['stores'] = {};
+      let storeId = 1;
+      let storeCalls = calls['storeCalls'] = [];
+      function wrapStore(store) {
+        let id = storeId++;
+        let err = new Error();
+        Error.captureStackTrace(err);
+        stores[id] = err.stack;
+        return {
+          id,
+          store,
+          get(key) {
+            storeCalls.push([this.id, 'get', key]);
+            return this.store.get(key);
+          },
+          set(key, value) {
+            storeCalls.push([this.id, 'set', key, typeof value === 'string' ? value : '__omitted__']);
+            this.store.set(key, value);
+          },
+          clear() {
+            storeCalls.push([this.id, 'clear']);
+            this.store.clear();
+          }
+        };
+      }
+    }
+  });
+
+  function clone(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
 
   function buildWrapper() {
     var RouteRecognizer = Ember.__loader.require("route-recognizer").default;
@@ -128,13 +188,11 @@
         return original[methodName].apply(this, arguments);
       }
     }
-
-    function clone(value) {
-      return JSON.parse(JSON.stringify(value));
-    }
   }
 })((function(callback) {
   var ENV;
+  var _Ember;
+  var __loader;
   var hooks;
   if (typeof EmberENV === "undefined") {
     Object.defineProperty(self, "EmberENV", {
@@ -170,4 +228,28 @@
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
+}, function loaderHook(callback) {
+  let _Ember;
+  let __loader;
+  if (typeof Ember === 'undefined') {
+    Object.defineProperty(self, "Ember", {
+      get() {
+        return _Ember;
+      },
+      set(v) {
+        if (v.__loader === undefined) {
+          Object.defineProperty(v, '__loader', {
+            get() {
+              return __loader;
+            },
+            set(v) {
+              callback(v);
+              __loader = v;
+            }
+          });
+        }
+        _Ember = v;
+      }
+    });
+  }
 });
